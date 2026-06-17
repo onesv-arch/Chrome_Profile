@@ -8,7 +8,7 @@
   "type": "commonjs",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YOUR_GITHUB_OWNER/YOUR_GITHUB_REPO.git"
+    "url": "https://github.com/onesv-arch/Chrome_Profile.git"
   },
   "scripts": {
     "start": "electron .",
