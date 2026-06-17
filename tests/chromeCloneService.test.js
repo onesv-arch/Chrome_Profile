@@ -11,6 +11,7 @@ const {
   countBookmarks,
   isSubPath,
   deleteChromeProfiles,
+  extractChromeFlagValue,
 } = require('../src/core/chromeCloneService');
 
 test('createDirectoryKey generates unique name and directory', () => {
@@ -167,4 +168,15 @@ test('isSubPath matches child and same path', () => {
   assert.equal(isSubPath('C:\\root', 'C:\\root'), true);
   assert.equal(isSubPath('C:\\root', 'C:\\root\\child'), true);
   assert.equal(isSubPath('C:\\root', 'C:\\other'), false);
+});
+
+test('extractChromeFlagValue reads quoted and unquoted Chrome flags', () => {
+  const commandLine = '"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --profile-directory="Profile 5" --user-data-dir=C:\\Users\\Admin\\AppData\\Local\\Google\\Chrome\\User Data';
+
+  assert.equal(extractChromeFlagValue(commandLine, 'profile-directory'), 'Profile 5');
+  assert.equal(
+    extractChromeFlagValue(commandLine, 'user-data-dir'),
+    'C:\\Users\\Admin\\AppData\\Local\\Google\\Chrome\\User Data',
+  );
+  assert.equal(extractChromeFlagValue(commandLine, 'missing-flag'), null);
 });

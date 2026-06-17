@@ -315,6 +315,8 @@ button:active:not(:disabled) {
 .workspace-section {
   padding: 22px;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: start;
   gap: 18px;
   min-height: 720px;
 }
@@ -362,12 +364,11 @@ button:active:not(:disabled) {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px;
-  align-items: center;
+  align-items: start;
   padding: 16px 18px;
   border-radius: 8px;
   border: 1px solid var(--border);
   background: rgba(18, 28, 43, 0.9);
-  cursor: pointer;
 }
 
 .profile-row.selected {
@@ -420,6 +421,27 @@ button:active:not(:disabled) {
 .tag.accent {
   color: var(--accent);
   border-color: rgba(71, 209, 140, 0.32);
+}
+
+.tag.success {
+  color: var(--accent-2);
+  border-color: rgba(94, 234, 212, 0.28);
+}
+
+.profile-side {
+  display: grid;
+  justify-items: end;
+  gap: 12px;
+}
+
+.profile-toggle-button {
+  min-width: 104px;
+  font-weight: 700;
+}
+
+.profile-toggle-button.active {
+  border-color: rgba(94, 234, 212, 0.28);
+  color: var(--accent-2);
 }
 
 .profile-metrics {
@@ -581,6 +603,10 @@ button:active:not(:disabled) {
   .control-split,
   .profile-row {
     grid-template-columns: 1fr;
+  }
+
+  .profile-side {
+    justify-items: stretch;
   }
 
   .update-actions {

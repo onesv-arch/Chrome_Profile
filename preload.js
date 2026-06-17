@@ -21,5 +21,7 @@ contextBridge.exposeInMainWorld('chromeCloner', {
   listProfiles: (userDataDir) => ipcRenderer.invoke('profiles:list', userDataDir),
   cloneProfiles: (payload) => ipcRenderer.invoke('profiles:clone', payload),
   deleteProfiles: (payload) => ipcRenderer.invoke('profiles:delete', payload),
+  openProfile: (payload) => ipcRenderer.invoke('profiles:open', payload),
+  closeProfile: (payload) => ipcRenderer.invoke('profiles:close', payload),
   pickDirectory: () => ipcRenderer.invoke('dialog:pick-directory'),
 });

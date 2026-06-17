@@ -3,6 +3,7 @@ const state = {
   filterText: '',
   busy: false,
   cloneInProgress: false,
+  profileActionBusyIds: new Set(),
   updater: {
     configured: false,
     checking: false,
@@ -115,7 +116,7 @@ function renderProfiles() {
   profileList.innerHTML = visibleProfiles
     .map(
       (profile) => `
-        <label class="profile-row ${profile.selected ? 'selected' : ''}">
+        <article class="profile-row ${profile.selected ? 'selected' : ''}">
           <div class="profile-main">
             <input
               class="profile-checkbox"
@@ -128,6 +129,7 @@ function renderProfiles() {
                 <div class="profile-name">${escapeHtml(profile.name)}</div>
                 ${profile.lastUsed ? '<span class="tag accent">Last used</span>' : ''}
                 ${profile.stats.unpackedExtensionCount > 0 ? '<span class="tag">Dev mode</span>' : ''}
+                ${profile.runtime?.isOpen ? '<span class="tag success">Open</span>' : ''}
               </div>
               <div class="profile-subtitle">
                 ${escapeHtml(profile.directory)}
@@ -136,21 +138,32 @@ function renderProfiles() {
             </div>
           </div>
 
-          <div class="profile-metrics">
-            <div class="mini-metric">
-              <span class="mini-label">Bookmarks</span>
-              <strong>${profile.stats.bookmarkCount}</strong>
-            </div>
-            <div class="mini-metric">
-              <span class="mini-label">Extensions</span>
-              <strong>${profile.stats.extensionCount}</strong>
-            </div>
-            <div class="mini-metric">
-              <span class="mini-label">Unpacked</span>
-              <strong>${profile.stats.unpackedExtensionCount}</strong>
+          <div class="profile-side">
+            <button
+              class="profile-toggle-button ${profile.runtime?.isOpen ? 'active' : ''}"
+              type="button"
+              data-toggle-profile-id="${escapeHtml(profile.id)}"
+              ${state.busy || state.cloneInProgress || state.profileActionBusyIds.has(profile.id) ? 'disabled' : ''}
+            >
+              ${state.profileActionBusyIds.has(profile.id) ? 'Working...' : profile.runtime?.isOpen ? 'Close' : 'Open'}
+            </button>
+
+            <div class="profile-metrics">
+              <div class="mini-metric">
+                <span class="mini-label">Bookmarks</span>
+                <strong>${profile.stats.bookmarkCount}</strong>
+              </div>
+              <div class="mini-metric">
+                <span class="mini-label">Extensions</span>
+                <strong>${profile.stats.extensionCount}</strong>
+              </div>
+              <div class="mini-metric">
+                <span class="mini-label">Unpacked</span>
+                <strong>${profile.stats.unpackedExtensionCount}</strong>
+              </div>
             </div>
           </div>
-        </label>
+        </article>
       `,
     )
     .join('');
@@ -163,6 +176,14 @@ function renderProfiles() {
         profile.selected = event.target.checked;
       }
       renderProfiles();
+    });
+  });
+
+  profileList.querySelectorAll('.profile-toggle-button').forEach((button) => {
+    button.addEventListener('click', async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await handleProfileToggle(button.dataset.toggleProfileId);
     });
   });
 
@@ -218,7 +239,7 @@ async function handleClone() {
       includeDevModeExtensions: includeDevModeCheckbox.checked,
     });
 
-    await refreshProfiles({ silent: true, keepBusy: true });
+    await refreshProfiles({ silent: true });
     setResult(formatCloneResult(result));
   } catch (error) {
     setResult(error.message || String(error));
@@ -257,12 +278,54 @@ async function handleDeleteSelected() {
       selectedProfileIds: selectedProfiles.map((profile) => profile.id),
     });
 
-    await refreshProfiles({ silent: true, keepBusy: true });
+    await refreshProfiles({ silent: true });
     setResult(formatDeleteResult(result));
   } catch (error) {
     setResult(error.message || String(error));
   } finally {
     setBusy(false);
+  }
+}
+
+async function handleProfileToggle(profileId) {
+  const profile = state.profiles.find((item) => item.id === profileId);
+  if (!profile) {
+    return;
+  }
+
+  state.profileActionBusyIds.add(profileId);
+  renderProfiles();
+
+  try {
+    const payload = {
+      userDataDir: userDataDirInput.value.trim(),
+      profileId,
+    };
+
+    const result = profile.runtime?.isOpen
+      ? await window.chromeCloner.closeProfile(payload)
+      : await window.chromeCloner.openProfile(payload);
+
+    await refreshProfiles({ silent: true, keepBusy: true });
+
+    if (profile.runtime?.isOpen) {
+      setResult(
+        result.alreadyClosed
+          ? `Profile ${profile.name} was already closed.`
+          : `Closed ${profile.name} (${profile.directory}).`,
+      );
+    } else {
+      setResult(
+        result.alreadyOpen
+          ? `Profile ${profile.name} was already open.`
+          : `Opened ${profile.name} (${profile.directory}).`,
+      );
+    }
+  } catch (error) {
+    setResult(error.message || String(error));
+  } finally {
+    state.profileActionBusyIds.delete(profileId);
+    renderProfiles();
   }
 }
 

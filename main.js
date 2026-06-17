@@ -5,6 +5,8 @@ const {
   listChromeProfiles,
   cloneChromeProfiles,
   deleteChromeProfiles,
+  openChromeProfile,
+  closeChromeProfile,
 } = require('./src/core/chromeCloneService');
 const { createUpdateService } = require('./src/core/updateService');
 
@@ -107,6 +109,20 @@ app.whenReady().then(() => {
       cloneInProgress = false;
       window.webContents.send('app:busy-state', { cloneInProgress });
     }
+  });
+
+  ipcMain.handle('profiles:open', async (_event, payload) => {
+    if (cloneInProgress) {
+      throw new Error('Finish the clone run before opening a Chrome profile.');
+    }
+    return openChromeProfile(payload);
+  });
+
+  ipcMain.handle('profiles:close', async (_event, payload) => {
+    if (cloneInProgress) {
+      throw new Error('Finish the clone run before closing a Chrome profile.');
+    }
+    return closeChromeProfile(payload);
   });
 
   ipcMain.handle('dialog:pick-directory', async () => {

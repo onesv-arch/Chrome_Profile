@@ -1,7 +1,7 @@
 const fs = require('fs/promises');
 const path = require('path');
 const os = require('os');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const { promisify } = require('util');
 
 const execFileAsync = promisify(execFile);
@@ -74,6 +74,11 @@ async function listChromeProfiles(userDataDir = getDefaultChromeUserDataDir()) {
   const localState = await readJson(localStatePath, {});
   const infoCache = localState.profile?.info_cache ?? {};
   const lastUsed = localState.profile?.last_used ?? null;
+  const runningProfiles = await listRunningChromeProfileProcesses(userDataDir);
+  const runningProfileMap = runningProfiles.reduce((map, item) => {
+    map.set(item.profileId, (map.get(item.profileId) ?? 0) + 1);
+    return map;
+  }, new Map());
   const entries = Object.entries(infoCache);
   const profiles = [];
 
@@ -106,6 +111,10 @@ async function listChromeProfiles(userDataDir = getDefaultChromeUserDataDir()) {
       isUsingDefaultName: Boolean(info.is_using_default_name),
       isEphemeral: Boolean(info.is_ephemeral),
       lastUsed: directory === lastUsed,
+      runtime: {
+        isOpen: runningProfileMap.has(directory),
+        processCount: runningProfileMap.get(directory) ?? 0,
+      },
       stats: {
         extensionCount,
         unpackedExtensionCount,
@@ -131,6 +140,86 @@ async function listChromeProfiles(userDataDir = getDefaultChromeUserDataDir()) {
     userDataDir,
     localStatePath,
     profiles,
+  };
+}
+
+async function openChromeProfile({
+  userDataDir = getDefaultChromeUserDataDir(),
+  profileId,
+}) {
+  if (!profileId) {
+    throw new Error('Profile id is required.');
+  }
+
+  const profileDir = path.join(userDataDir, profileId);
+  if (!(await exists(profileDir))) {
+    throw new Error(`Profile folder not found: ${profileId}`);
+  }
+
+  const runningProfiles = await listRunningChromeProfileProcesses(userDataDir);
+  if (runningProfiles.some((item) => item.profileId === profileId)) {
+    return {
+      ok: true,
+      alreadyOpen: true,
+      profileId,
+    };
+  }
+
+  const chromePath = await resolveChromeExecutablePath();
+  const child = spawn(
+    chromePath,
+    [
+      `--user-data-dir=${userDataDir}`,
+      `--profile-directory=${profileId}`,
+      '--new-window',
+    ],
+    {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    },
+  );
+
+  child.unref();
+
+  return {
+    ok: true,
+    alreadyOpen: false,
+    profileId,
+  };
+}
+
+async function closeChromeProfile({
+  userDataDir = getDefaultChromeUserDataDir(),
+  profileId,
+}) {
+  if (!profileId) {
+    throw new Error('Profile id is required.');
+  }
+
+  const runningProfiles = await listRunningChromeProfileProcesses(userDataDir);
+  const matching = runningProfiles.filter((item) => item.profileId === profileId);
+
+  if (matching.length === 0) {
+    return {
+      ok: true,
+      alreadyClosed: true,
+      profileId,
+      closedProcesses: 0,
+    };
+  }
+
+  await Promise.all(
+    matching.map((item) =>
+      execFileAsync('taskkill', ['/PID', String(item.pid), '/T', '/F']).catch(() => null),
+    ),
+  );
+
+  return {
+    ok: true,
+    alreadyClosed: false,
+    profileId,
+    closedProcesses: matching.length,
   };
 }
 
@@ -598,6 +687,53 @@ async function detectRunningChrome() {
   }
 }
 
+async function listRunningChromeProfileProcesses(userDataDir = getDefaultChromeUserDataDir()) {
+  if (process.platform !== 'win32') {
+    return [];
+  }
+
+  const command = [
+    `Get-CimInstance Win32_Process -Filter "Name = 'chrome.exe'"`,
+    '| Select-Object ProcessId, CommandLine',
+    '| ConvertTo-Json -Compress',
+  ].join(' ');
+
+  try {
+    const { stdout } = await execFileAsync(
+      'powershell.exe',
+      ['-NoProfile', '-Command', command],
+      { windowsHide: true },
+    );
+
+    if (!stdout.trim()) {
+      return [];
+    }
+
+    const parsed = JSON.parse(stdout);
+    const entries = Array.isArray(parsed) ? parsed : [parsed];
+    const normalizedUserDataDir = normalizePathForCompare(userDataDir);
+
+    return entries
+      .filter((entry) => typeof entry?.CommandLine === 'string' && entry.CommandLine.trim())
+      .filter((entry) => !entry.CommandLine.includes('--type='))
+      .map((entry) => {
+        const commandLine = entry.CommandLine;
+        const profileUserDataDir = extractChromeFlagValue(commandLine, 'user-data-dir') || getDefaultChromeUserDataDir();
+        const profileId = extractChromeFlagValue(commandLine, 'profile-directory') || 'Default';
+
+        return {
+          pid: Number(entry.ProcessId),
+          profileId,
+          userDataDir: profileUserDataDir,
+        };
+      })
+      .filter((entry) => normalizePathForCompare(entry.userDataDir) === normalizedUserDataDir)
+      .filter((entry) => Number.isInteger(entry.pid) && entry.pid > 0);
+  } catch {
+    return [];
+  }
+}
+
 function parseCsvProcessName(line) {
   const match = line.match(/^"([^"]+)"/);
   return match?.[1] ?? '';
@@ -606,6 +742,32 @@ function parseCsvProcessName(line) {
 function isSubPath(parentPath, childPath) {
   const relative = path.relative(parentPath, childPath);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+async function resolveChromeExecutablePath() {
+  const candidates = [
+    path.join(process.env['PROGRAMFILES'] || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    path.join(process.env['PROGRAMFILES(X86)'] || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (candidate && (await exists(candidate))) {
+      return candidate;
+    }
+  }
+
+  throw new Error('Chrome executable not found on this machine.');
+}
+
+function extractChromeFlagValue(commandLine, flagName) {
+  const pattern = new RegExp(`(?:^|\\s)--${flagName}=(?:"([^"]+)"|(.+?))(?=\\s--[\\w-]+=|$)`, 'i');
+  const match = commandLine.match(pattern);
+  return match?.[1] ?? match?.[2]?.trim() ?? null;
+}
+
+function normalizePathForCompare(value) {
+  return path.normalize(String(value || '')).replace(/[\\/]+$/, '').toLowerCase();
 }
 
 async function discoverProfileDirectories(userDataDir) {
@@ -623,6 +785,8 @@ module.exports = {
   listChromeProfiles,
   cloneChromeProfiles,
   deleteChromeProfiles,
+  openChromeProfile,
+  closeChromeProfile,
   createDirectoryKey,
   rewriteUnpackedExtensionPaths,
   countInstalledExtensions,
@@ -631,5 +795,7 @@ module.exports = {
   writeJson,
   exists,
   detectRunningChrome,
+  listRunningChromeProfileProcesses,
   isSubPath,
+  extractChromeFlagValue,
 };
