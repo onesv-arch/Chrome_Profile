@@ -93,6 +93,7 @@ async function listChromeProfiles(userDataDir = getDefaultChromeUserDataDir()) {
     const preferences = await readJson(path.join(profileDir, 'Preferences'), {});
     const bookmarks = await readJson(path.join(profileDir, 'Bookmarks'), {});
     const bookmarkCount = countBookmarks(bookmarks?.roots ?? {});
+    const extensionCount = await countInstalledExtensions(profileDir, preferences);
     const unpackedExtensionCount = await countUnpackedExtensions(profileDir, preferences);
 
     profiles.push({
@@ -106,7 +107,7 @@ async function listChromeProfiles(userDataDir = getDefaultChromeUserDataDir()) {
       isEphemeral: Boolean(info.is_ephemeral),
       lastUsed: directory === lastUsed,
       stats: {
-        extensionCount: Object.keys(preferences?.extensions?.settings ?? {}).length,
+        extensionCount,
         unpackedExtensionCount,
         bookmarkCount,
         bookmarkBarVisible: typeof preferences?.bookmark_bar?.show_on_all_tabs === 'boolean'
@@ -153,19 +154,25 @@ function countBookmarks(roots) {
   return total;
 }
 
+async function countInstalledExtensions(profileDir, preferences) {
+  const settings = preferences?.extensions?.settings ?? {};
+  const settingsIds = new Set(
+    Object.entries(settings)
+      .filter(([, config]) => !isLikelyUnpackedExtensionConfig(profileDir, config))
+      .map(([extensionId]) => extensionId)
+      .filter(isChromeExtensionId),
+  );
+
+  const directoryIds = new Set(await discoverInstalledExtensionIds(profileDir));
+  return new Set([...settingsIds, ...directoryIds]).size;
+}
+
 async function countUnpackedExtensions(sourceProfileDir, preferences) {
   const settings = preferences?.extensions?.settings ?? {};
   let count = 0;
 
   for (const config of Object.values(settings)) {
-    const currentPath = config?.path;
-    if (!currentPath || typeof currentPath !== 'string' || !path.isAbsolute(currentPath)) {
-      continue;
-    }
-    if (isSubPath(sourceProfileDir, currentPath)) {
-      continue;
-    }
-    if (await exists(path.join(currentPath, 'manifest.json'))) {
+    if (await isLikelyUnpackedExtensionConfig(sourceProfileDir, config)) {
       count += 1;
     }
   }
@@ -212,6 +219,7 @@ async function cloneChromeProfiles({
   suffix = 'Clone',
   includeDevModeExtensions = true,
   managedExtensionRoot,
+  skipProcessCheck = false,
 }) {
   if (!Array.isArray(selectedProfileIds) || selectedProfileIds.length === 0) {
     throw new Error('No Chrome profile selected.');
@@ -223,9 +231,11 @@ async function cloneChromeProfiles({
     throw new Error('Local State not found. Check the Chrome user data path.');
   }
 
-  const runningChrome = await detectRunningChrome();
-  if (runningChrome.length > 0) {
-    throw new Error('Chrome is still running. Close every Chrome window before cloning.');
+  if (!skipProcessCheck) {
+    const runningChrome = await detectRunningChrome();
+    if (runningChrome.length > 0) {
+      throw new Error('Chrome is still running. Close every Chrome window before cloning.');
+    }
   }
 
   const infoCache = localState.profile?.info_cache ?? {};
@@ -298,6 +308,69 @@ async function cloneChromeProfiles({
     await rollbackArtifacts(createdArtifacts);
     throw new Error(`Clone aborted. ${error.message}`);
   }
+}
+
+async function deleteChromeProfiles({
+  userDataDir = getDefaultChromeUserDataDir(),
+  selectedProfileIds = [],
+  managedExtensionRoot,
+  skipProcessCheck = false,
+}) {
+  if (!Array.isArray(selectedProfileIds) || selectedProfileIds.length === 0) {
+    throw new Error('No Chrome profile selected for deletion.');
+  }
+
+  const localStatePath = path.join(userDataDir, 'Local State');
+  const localState = await readJson(localStatePath, null);
+  if (!localState) {
+    throw new Error('Local State not found. Check the Chrome user data path.');
+  }
+
+  if (!skipProcessCheck) {
+    const runningChrome = await detectRunningChrome();
+    if (runningChrome.length > 0) {
+      throw new Error('Chrome is still running. Close every Chrome window before deleting profiles.');
+    }
+  }
+
+  const infoCache = localState.profile?.info_cache ?? {};
+  const deleted = [];
+
+  for (const profileId of selectedProfileIds) {
+    if (profileId === 'Default') {
+      throw new Error('Deleting the Default Chrome profile is blocked.');
+    }
+
+    const profileDir = path.join(userDataDir, profileId);
+    if (!(await exists(profileDir))) {
+      throw new Error(`Profile folder not found: ${profileId}`);
+    }
+
+    await fs.rm(profileDir, { recursive: true, force: true });
+    if (managedExtensionRoot) {
+      await fs.rm(path.join(managedExtensionRoot, profileId), { recursive: true, force: true });
+    }
+
+    const sourceInfo = infoCache[profileId] ?? {};
+    delete infoCache[profileId];
+    deleted.push({
+      profileId,
+      profileName: sourceInfo.name || profileId,
+    });
+  }
+
+  localState.profile = localState.profile || {};
+  localState.profile.info_cache = infoCache;
+  if (selectedProfileIds.includes(localState.profile.last_used)) {
+    localState.profile.last_used = 'Default';
+  }
+
+  await writeJson(localStatePath, localState);
+
+  return {
+    ok: true,
+    deleted,
+  };
 }
 
 function buildCloneSummary(results) {
@@ -381,7 +454,7 @@ async function patchClonedProfile({
 
   return {
     stats: {
-      extensionCount: Object.keys(preferences?.extensions?.settings ?? {}).length,
+      extensionCount: await countInstalledExtensions(targetDir, preferences),
       unpackedCopied: unpackedResult.copied.length,
       bookmarkCount: countBookmarks(bookmarks?.roots ?? {}),
     },
@@ -453,6 +526,37 @@ async function rewriteUnpackedExtensionPaths({
   };
 }
 
+async function isLikelyUnpackedExtensionConfig(sourceProfileDir, config) {
+  const currentPath = config?.path;
+  if (!currentPath || typeof currentPath !== 'string' || !path.isAbsolute(currentPath)) {
+    return false;
+  }
+  if (sourceProfileDir && isSubPath(sourceProfileDir, currentPath)) {
+    return false;
+  }
+  return exists(path.join(currentPath, 'manifest.json'));
+}
+
+async function discoverInstalledExtensionIds(profileDir) {
+  const extensionsDir = path.join(profileDir, 'Extensions');
+  try {
+    const entries = await fs.readdir(extensionsDir, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .filter(isChromeExtensionId);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+}
+
+function isChromeExtensionId(value) {
+  return /^[a-p]{32}$/.test(String(value));
+}
+
 async function cleanupTransientFiles(profileDir) {
   const transientNames = [
     'Cache',
@@ -514,8 +618,10 @@ module.exports = {
   getDefaultChromeUserDataDir,
   listChromeProfiles,
   cloneChromeProfiles,
+  deleteChromeProfiles,
   createDirectoryKey,
   rewriteUnpackedExtensionPaths,
+  countInstalledExtensions,
   countBookmarks,
   readJson,
   writeJson,

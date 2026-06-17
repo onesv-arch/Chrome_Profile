@@ -7,8 +7,10 @@ const path = require('path');
 const {
   createDirectoryKey,
   rewriteUnpackedExtensionPaths,
+  countInstalledExtensions,
   countBookmarks,
   isSubPath,
+  deleteChromeProfiles,
 } = require('../src/core/chromeCloneService');
 
 test('createDirectoryKey generates unique name and directory', () => {
@@ -99,6 +101,66 @@ test('countBookmarks sums nested bookmark items', () => {
   });
 
   assert.equal(total, 3);
+});
+
+test('countInstalledExtensions counts extension ids from disk and ignores unpacked paths', async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'chrome-cloner-test-'));
+  const profileDir = path.join(tempRoot, 'Profile 1');
+  const extensionsDir = path.join(profileDir, 'Extensions');
+  const unpackedDir = path.join(tempRoot, 'my-unpacked-extension');
+
+  await fs.mkdir(path.join(extensionsDir, 'abcdefghijklmnopabcdefghijklmnop', '1.0.0'), { recursive: true });
+  await fs.mkdir(unpackedDir, { recursive: true });
+  await fs.writeFile(path.join(unpackedDir, 'manifest.json'), '{"name":"Demo"}', 'utf8');
+
+  const preferences = {
+    extensions: {
+      settings: {
+        abcdefghijklmnopabcdefghijklmnop: {},
+        ponmlkjihgfedcbaponmlkjihgfedcba: {
+          path: unpackedDir,
+        },
+      },
+    },
+  };
+
+  const count = await countInstalledExtensions(profileDir, preferences);
+  assert.equal(count, 1);
+});
+
+test('deleteChromeProfiles removes profile folders and updates Local State', async () => {
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'chrome-cloner-test-'));
+  const userDataDir = path.join(tempRoot, 'User Data');
+  const managedRoot = path.join(tempRoot, 'managed');
+  const profileDir = path.join(userDataDir, 'Profile 3');
+
+  await fs.mkdir(profileDir, { recursive: true });
+  await fs.mkdir(path.join(managedRoot, 'Profile 3'), { recursive: true });
+  await fs.writeFile(
+    path.join(userDataDir, 'Local State'),
+    JSON.stringify({
+      profile: {
+        last_used: 'Profile 3',
+        info_cache: {
+          'Profile 3': { name: 'To Delete' },
+        },
+      },
+    }),
+    'utf8',
+  );
+
+  const result = await deleteChromeProfiles({
+    userDataDir,
+    selectedProfileIds: ['Profile 3'],
+    managedExtensionRoot: managedRoot,
+    skipProcessCheck: true,
+  });
+
+  assert.equal(result.deleted.length, 1);
+  assert.equal(await fs.stat(profileDir).then(() => true).catch(() => false), false);
+  const localState = JSON.parse(await fs.readFile(path.join(userDataDir, 'Local State'), 'utf8'));
+  assert.equal(localState.profile.last_used, 'Default');
+  assert.equal(localState.profile.info_cache['Profile 3'], undefined);
 });
 
 test('isSubPath matches child and same path', () => {

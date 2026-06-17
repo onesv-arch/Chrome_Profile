@@ -31,6 +31,7 @@ const profileSearchInput = document.getElementById('profileSearch');
 const profileList = document.getElementById('profileList');
 const selectAllButton = document.getElementById('selectAll');
 const clearSelectionButton = document.getElementById('clearSelection');
+const deleteSelectedButton = document.getElementById('deleteSelected');
 const selectedCount = document.getElementById('selectedCount');
 const selectedBookmarks = document.getElementById('selectedBookmarks');
 const selectedExtensions = document.getElementById('selectedExtensions');
@@ -226,6 +227,45 @@ async function handleClone() {
   }
 }
 
+async function handleDeleteSelected() {
+  const selectedProfiles = state.profiles.filter((profile) => profile.selected);
+  if (selectedProfiles.length === 0) {
+    setResult('Select at least one profile to delete.');
+    return;
+  }
+
+  if (selectedProfiles.some((profile) => profile.id === 'Default')) {
+    setResult('Default Chrome profile cannot be deleted from this app.');
+    return;
+  }
+
+  const summary = selectedProfiles.map((profile) => `- ${profile.name} (${profile.directory})`).join('\n');
+  const confirmed = window.confirm(
+    `Delete ${selectedProfiles.length} profile(s)?\n\n${summary}\n\nThis removes the Chrome profile folders permanently.`,
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  setBusy(true);
+  setResult('Deleting profiles...');
+
+  try {
+    const result = await window.chromeCloner.deleteProfiles({
+      userDataDir: userDataDirInput.value.trim(),
+      selectedProfileIds: selectedProfiles.map((profile) => profile.id),
+    });
+
+    await refreshProfiles({ silent: true, keepBusy: true });
+    setResult(formatDeleteResult(result));
+  } catch (error) {
+    setResult(error.message || String(error));
+  } finally {
+    setBusy(false);
+  }
+}
+
 function formatCloneResult(result) {
   const lines = [
     'Clone completed.',
@@ -256,6 +296,14 @@ function formatCloneResult(result) {
   return lines.join('\n');
 }
 
+function formatDeleteResult(result) {
+  const lines = ['Delete completed.', ''];
+  for (const item of result.deleted) {
+    lines.push(`- ${item.profileName} (${item.profileId})`);
+  }
+  return lines.join('\n');
+}
+
 function setBusy(isBusy) {
   state.busy = isBusy;
   appStatus.textContent = isBusy ? 'Working' : 'Ready';
@@ -265,6 +313,7 @@ function setBusy(isBusy) {
   browseDirButton.disabled = isBusy;
   selectAllButton.disabled = isBusy;
   clearSelectionButton.disabled = isBusy;
+  deleteSelectedButton.disabled = isBusy;
   renderUpdater();
 }
 
@@ -364,6 +413,7 @@ clearSelectionButton.addEventListener('click', () => {
 });
 
 startCloneButton.addEventListener('click', handleClone);
+deleteSelectedButton.addEventListener('click', handleDeleteSelected);
 
 checkUpdatesButton.addEventListener('click', async () => {
   try {

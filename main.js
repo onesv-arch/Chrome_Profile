@@ -4,6 +4,7 @@ const {
   getDefaultChromeUserDataDir,
   listChromeProfiles,
   cloneChromeProfiles,
+  deleteChromeProfiles,
 } = require('./src/core/chromeCloneService');
 const { createUpdateService } = require('./src/core/updateService');
 
@@ -85,6 +86,20 @@ app.whenReady().then(() => {
     window.webContents.send('app:busy-state', { cloneInProgress });
     try {
       return await cloneChromeProfiles({
+        ...payload,
+        managedExtensionRoot: path.join(app.getPath('userData'), 'unpacked-extensions'),
+      });
+    } finally {
+      cloneInProgress = false;
+      window.webContents.send('app:busy-state', { cloneInProgress });
+    }
+  });
+
+  ipcMain.handle('profiles:delete', async (_event, payload) => {
+    cloneInProgress = true;
+    window.webContents.send('app:busy-state', { cloneInProgress });
+    try {
+      return await deleteChromeProfiles({
         ...payload,
         managedExtensionRoot: path.join(app.getPath('userData'), 'unpacked-extensions'),
       });

@@ -289,6 +289,17 @@ button:active:not(:disabled) {
   padding: 0 2px;
 }
 
+.danger-button {
+  border-color: rgba(255, 142, 119, 0.28);
+  color: #ffd6cd;
+  background: rgba(63, 24, 22, 0.92);
+}
+
+.danger-button:hover:not(:disabled) {
+  border-color: rgba(255, 142, 119, 0.4);
+  background: rgba(82, 28, 24, 0.96);
+}
+
 .workspace-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.65fr);
