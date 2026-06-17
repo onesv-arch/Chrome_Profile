@@ -5,6 +5,7 @@ const { NsisUpdater } = require('electron-updater');
 
 function createUpdateService(window) {
   let updater = null;
+  let installAfterDownload = false;
   let status = {
     configured: false,
     checking: false,
@@ -67,8 +68,11 @@ function createUpdateService(window) {
       throw new Error('Auto-update is not configured yet.');
     }
 
+    installAfterDownload = true;
     emitStatus({
       checking: true,
+      downloaded: false,
+      updateAvailable: false,
       message: 'Checking GitHub Releases for updates...',
       progressPercent: null,
     });
@@ -81,6 +85,7 @@ function createUpdateService(window) {
       throw new Error('Auto-update is not configured yet.');
     }
 
+    installAfterDownload = false;
     emitStatus({
       downloading: true,
       message: 'Downloading update from GitHub Releases...',
@@ -172,6 +177,7 @@ function buildGithubReleasesUrl(config) {
 
 function wireUpdaterEvents(updater, emitStatus) {
   updater.on('error', (error) => {
+    installAfterDownload = false;
     emitStatus({
       checking: false,
       downloading: false,
@@ -193,11 +199,29 @@ function wireUpdaterEvents(updater, emitStatus) {
       downloaded: false,
       latestVersion: info.version,
       releaseNotes: normalizeReleaseNotes(info.releaseNotes),
-      message: `Update ${info.version} is available on GitHub Releases.`,
+      message: installAfterDownload
+        ? `Update ${info.version} found. Downloading now...`
+        : `Update ${info.version} is available on GitHub Releases.`,
     });
+
+    if (installAfterDownload) {
+      emitStatus({
+        downloading: true,
+        progressPercent: 0,
+      });
+      updater.downloadUpdate().catch((error) => {
+        installAfterDownload = false;
+        emitStatus({
+          checking: false,
+          downloading: false,
+          message: `Update error: ${error.message}`,
+        });
+      });
+    }
   });
 
   updater.on('update-not-available', (info) => {
+    installAfterDownload = false;
     emitStatus({
       checking: false,
       updateAvailable: false,
@@ -224,8 +248,17 @@ function wireUpdaterEvents(updater, emitStatus) {
       updateAvailable: true,
       latestVersion: info.version,
       progressPercent: 100,
-      message: `Update ${info.version} is ready to install.`,
+      message: installAfterDownload
+        ? `Update ${info.version} downloaded. Restarting to install...`
+        : `Update ${info.version} is ready to install.`,
     });
+
+    if (installAfterDownload) {
+      installAfterDownload = false;
+      setTimeout(() => {
+        updater.quitAndInstall(false, true);
+      }, 1200);
+    }
   });
 }
 

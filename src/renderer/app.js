@@ -339,7 +339,7 @@ function renderUpdater() {
   if (!updater.configured) {
     updateStatusPill.textContent = 'No feed';
   } else if (updater.downloaded) {
-    updateStatusPill.textContent = 'Ready to install';
+    updateStatusPill.textContent = 'Installing';
     updateStatusPill.classList.add('success');
   } else if (updater.downloading) {
     updateStatusPill.textContent = 'Downloading';
@@ -357,9 +357,8 @@ function renderUpdater() {
 
   const updatesLocked = state.busy || state.cloneInProgress;
   checkUpdatesButton.disabled = !updater.configured || updatesLocked || updater.checking || updater.downloading;
-  downloadUpdateButton.disabled =
-    !updater.configured || updatesLocked || !updater.updateAvailable || updater.downloaded || updater.downloading;
-  installUpdateButton.disabled = !updater.configured || updatesLocked || !updater.downloaded;
+  downloadUpdateButton.disabled = true;
+  installUpdateButton.disabled = true;
   openFeedButton.disabled = !updater.sourceUrl;
 }
 
@@ -418,22 +417,6 @@ deleteSelectedButton.addEventListener('click', handleDeleteSelected);
 checkUpdatesButton.addEventListener('click', async () => {
   try {
     await window.chromeCloner.checkForUpdates();
-  } catch (error) {
-    setResult(error.message || String(error));
-  }
-});
-
-downloadUpdateButton.addEventListener('click', async () => {
-  try {
-    await window.chromeCloner.downloadUpdate();
-  } catch (error) {
-    setResult(error.message || String(error));
-  }
-});
-
-installUpdateButton.addEventListener('click', async () => {
-  try {
-    await window.chromeCloner.installUpdate();
   } catch (error) {
     setResult(error.message || String(error));
   }
