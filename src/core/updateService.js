@@ -197,13 +197,13 @@ function wireUpdaterEvents(updater, emitStatus) {
     });
   });
 
-  updater.on('update-not-available', () => {
+  updater.on('update-not-available', (info) => {
     emitStatus({
       checking: false,
       updateAvailable: false,
       downloaded: false,
-      latestVersion: null,
-      releaseNotes: null,
+      latestVersion: info?.version || app.getVersion(),
+      releaseNotes: normalizeReleaseNotes(info?.releaseNotes),
       progressPercent: null,
       message: 'You are on the latest published GitHub release.',
     });
