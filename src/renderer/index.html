@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chrome Profile Cloner</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">CP</div>
+          <div class="brand-copy">
+            <div class="eyebrow">Windows Desktop Utility</div>
+            <h1>Chrome Profile Cloner</h1>
+          </div>
+        </div>
+
+        <div class="topbar-meta">
+          <div class="status-pill" id="appStatus">Ready</div>
+          <div class="status-pill neutral" id="updateStatusPill">Updates</div>
+          <div class="version-pill" id="appVersion">v0.0.0</div>
+        </div>
+      </header>
+
+      <section class="hero-band">
+        <div>
+          <h2>Clone complete Chrome profiles without manually rebuilding browser state.</h2>
+          <p>
+            This tool copies bookmarks, installed extensions, and unpacked dev-mode extensions when the source folders still exist.
+          </p>
+        </div>
+        <div class="hero-note">
+          <div class="note-title">Before cloning</div>
+          <div class="note-body">Close every Chrome window first. The clone flow will stop if Chrome is still running.</div>
+        </div>
+      </section>
+
+      <section class="control-band">
+        <div class="control-block">
+          <label for="userDataDir">Chrome User Data</label>
+          <div class="control-row path-row">
+            <input id="userDataDir" type="text" />
+            <button id="browseDir" type="button">Browse</button>
+            <button id="refreshProfiles" type="button">Refresh</button>
+          </div>
+        </div>
+
+        <div class="control-split">
+          <label class="control-block">
+            <span>Clone suffix</span>
+            <input id="cloneSuffix" type="text" value="Clone" />
+          </label>
+
+          <label class="toggle-row">
+            <input id="includeDevMode" type="checkbox" checked />
+            <span>Copy unpacked dev-mode extensions</span>
+          </label>
+        </div>
+      </section>
+
+      <main class="workspace-grid">
+        <section class="workspace-section">
+          <div class="section-head">
+            <div>
+              <div class="section-kicker">Source Profiles</div>
+              <h3>Choose profiles to clone</h3>
+            </div>
+            <div class="section-actions">
+              <input id="profileSearch" class="search-input" type="text" placeholder="Search profiles" />
+              <button id="selectAll" type="button">Select all</button>
+              <button id="clearSelection" type="button">Clear</button>
+            </div>
+          </div>
+
+          <div id="profileList" class="profile-list"></div>
+        </section>
+
+        <aside class="side-rail">
+          <section class="rail-section">
+            <div class="section-kicker">Run Summary</div>
+            <h3>Current selection</h3>
+
+            <div class="metric-grid">
+              <div class="metric">
+                <div class="metric-label">Profiles</div>
+                <div id="selectedCount" class="metric-value">0</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Bookmarks</div>
+                <div id="selectedBookmarks" class="metric-value">0</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Extensions</div>
+                <div id="selectedExtensions" class="metric-value">0</div>
+              </div>
+              <div class="metric">
+                <div class="metric-label">Unpacked</div>
+                <div id="selectedUnpacked" class="metric-value">0</div>
+              </div>
+            </div>
+
+            <button id="startClone" class="primary-action" type="button">Start clone</button>
+          </section>
+
+          <section class="rail-section">
+            <div class="section-kicker">Clone Result</div>
+            <h3>Activity</h3>
+            <pre id="resultBox" class="result-box">Ready.</pre>
+          </section>
+
+          <section class="rail-section">
+            <div class="section-kicker">Application Update</div>
+            <h3>Release channel</h3>
+            <div id="updateMessage" class="update-message">Update system is loading.</div>
+            <div id="updateMeta" class="update-meta"></div>
+            <div id="updateProgress" class="progress-strip hidden">
+              <div id="updateProgressBar" class="progress-bar"></div>
+            </div>
+            <div class="update-actions">
+              <button id="checkUpdates" type="button">Check updates</button>
+              <button id="downloadUpdate" type="button">Download</button>
+              <button id="installUpdate" type="button">Install</button>
+              <button id="openFeed" type="button">Open feed</button>
+            </div>
+            <pre id="releaseNotes" class="release-notes">No release notes.</pre>
+          </section>
+
+          <section class="rail-section note-strip">
+            <div class="section-kicker">Operational Notes</div>
+            <ul>
+              <li>Best result is on the same Windows user account.</li>
+              <li>Some Chrome login sessions may still not survive cloning.</li>
+              <li>Missing unpacked extension source folders will be reported as warnings.</li>
+            </ul>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+  </html>

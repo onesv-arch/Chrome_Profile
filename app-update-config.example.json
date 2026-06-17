@@ -1,0 +1,10 @@
+{
+  "provider": "github",
+  "owner": "your-github-owner",
+  "repo": "your-github-repo",
+  "private": false,
+  "vPrefixedTagName": true,
+  "releaseType": "release",
+  "channel": "latest",
+  "host": "github.com"
+}
