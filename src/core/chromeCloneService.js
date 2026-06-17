@@ -156,12 +156,16 @@ function countBookmarks(roots) {
 
 async function countInstalledExtensions(profileDir, preferences) {
   const settings = preferences?.extensions?.settings ?? {};
-  const settingsIds = new Set(
-    Object.entries(settings)
-      .filter(([, config]) => !isLikelyUnpackedExtensionConfig(profileDir, config))
-      .map(([extensionId]) => extensionId)
-      .filter(isChromeExtensionId),
-  );
+  const settingsIds = new Set();
+  for (const [extensionId, config] of Object.entries(settings)) {
+    if (!isChromeExtensionId(extensionId)) {
+      continue;
+    }
+    if (await isLikelyUnpackedExtensionConfig(profileDir, config)) {
+      continue;
+    }
+    settingsIds.add(extensionId);
+  }
 
   const directoryIds = new Set(await discoverInstalledExtensionIds(profileDir));
   return new Set([...settingsIds, ...directoryIds]).size;
