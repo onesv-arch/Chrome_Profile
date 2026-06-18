@@ -24,7 +24,7 @@ module.exports = {
         arch: ['x64'],
       },
     ],
-    artifactName: '${productName}-Setup-${version}.${ext}',
+    artifactName: 'Chrome-Profile-Cloner-Setup-${version}.${ext}',
     publish: buildPublishConfig(updateConfig),
   },
   nsis: {

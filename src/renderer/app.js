@@ -68,6 +68,7 @@ async function init() {
 
   window.chromeCloner.onBusyState((payload) => {
     state.cloneInProgress = Boolean(payload.cloneInProgress);
+    renderProfiles();
     renderUpdater();
   });
 
@@ -377,6 +378,7 @@ function setBusy(isBusy) {
   selectAllButton.disabled = isBusy;
   clearSelectionButton.disabled = isBusy;
   deleteSelectedButton.disabled = isBusy;
+  renderProfiles();
   renderUpdater();
 }
 

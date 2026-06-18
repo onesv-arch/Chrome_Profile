@@ -5,7 +5,9 @@ const { NsisUpdater } = require('electron-updater');
 
 function createUpdateService(window) {
   let updater = null;
-  let installAfterDownload = false;
+  const flowState = {
+    installAfterDownload: false,
+  };
   let status = {
     configured: false,
     checking: false,
@@ -53,7 +55,7 @@ function createUpdateService(window) {
     updater.autoInstallOnAppQuit = false;
     updater.autoRunAppAfterInstall = true;
 
-    wireUpdaterEvents(updater, emitStatus);
+    wireUpdaterEvents(updater, emitStatus, flowState);
 
     emitStatus({
       configured: true,
@@ -68,7 +70,7 @@ function createUpdateService(window) {
       throw new Error('Auto-update is not configured yet.');
     }
 
-    installAfterDownload = true;
+    flowState.installAfterDownload = true;
     emitStatus({
       checking: true,
       downloaded: false,
@@ -85,7 +87,7 @@ function createUpdateService(window) {
       throw new Error('Auto-update is not configured yet.');
     }
 
-    installAfterDownload = false;
+    flowState.installAfterDownload = false;
     emitStatus({
       downloading: true,
       message: 'Downloading update from GitHub Releases...',
@@ -175,9 +177,9 @@ function buildGithubReleasesUrl(config) {
   return `https://${host}/${config.owner}/${config.repo}/releases`;
 }
 
-function wireUpdaterEvents(updater, emitStatus) {
+function wireUpdaterEvents(updater, emitStatus, flowState) {
   updater.on('error', (error) => {
-    installAfterDownload = false;
+    flowState.installAfterDownload = false;
     emitStatus({
       checking: false,
       downloading: false,
@@ -199,18 +201,18 @@ function wireUpdaterEvents(updater, emitStatus) {
       downloaded: false,
       latestVersion: info.version,
       releaseNotes: normalizeReleaseNotes(info.releaseNotes),
-      message: installAfterDownload
+      message: flowState.installAfterDownload
         ? `Update ${info.version} found. Downloading now...`
         : `Update ${info.version} is available on GitHub Releases.`,
     });
 
-    if (installAfterDownload) {
+    if (flowState.installAfterDownload) {
       emitStatus({
         downloading: true,
         progressPercent: 0,
       });
       updater.downloadUpdate().catch((error) => {
-        installAfterDownload = false;
+        flowState.installAfterDownload = false;
         emitStatus({
           checking: false,
           downloading: false,
@@ -221,7 +223,7 @@ function wireUpdaterEvents(updater, emitStatus) {
   });
 
   updater.on('update-not-available', (info) => {
-    installAfterDownload = false;
+    flowState.installAfterDownload = false;
     emitStatus({
       checking: false,
       updateAvailable: false,
@@ -248,13 +250,13 @@ function wireUpdaterEvents(updater, emitStatus) {
       updateAvailable: true,
       latestVersion: info.version,
       progressPercent: 100,
-      message: installAfterDownload
+      message: flowState.installAfterDownload
         ? `Update ${info.version} downloaded. Restarting to install...`
         : `Update ${info.version} is ready to install.`,
     });
 
-    if (installAfterDownload) {
-      installAfterDownload = false;
+    if (flowState.installAfterDownload) {
+      flowState.installAfterDownload = false;
       setTimeout(() => {
         updater.quitAndInstall(false, true);
       }, 1200);
