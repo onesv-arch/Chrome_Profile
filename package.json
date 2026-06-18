@@ -1,6 +1,6 @@
 {
   "name": "chrome-profile-cloner",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "productName": "Chrome Profile Cloner",
   "description": "Desktop tool to clone Chrome profiles with bookmarks and extensions.",
   "author": "Admin",
@@ -15,7 +15,7 @@
     "dev": "electron .",
     "test": "node --test",
     "pack": "electron-builder --config electron-builder.config.cjs --dir",
-    "dist": "electron-builder --config electron-builder.config.cjs --win nsis",
+    "dist": "electron-builder --config electron-builder.config.cjs --win nsis --publish never",
     "publish:github": "electron-builder --config electron-builder.config.cjs --win nsis --publish always"
   },
   "devDependencies": {
