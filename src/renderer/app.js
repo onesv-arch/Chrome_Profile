@@ -76,7 +76,9 @@ async function init() {
 }
 
 async function refreshProfiles(options = {}) {
-  setBusy(options.keepBusy ?? false);
+  if (!options.keepBusy) {
+    setBusy(true);
+  }
   if (!options.silent) {
     setResult('Loading profiles...');
   }
@@ -240,7 +242,7 @@ async function handleClone() {
       includeDevModeExtensions: includeDevModeCheckbox.checked,
     });
 
-    await refreshProfiles({ silent: true });
+    await refreshProfiles({ silent: true, keepBusy: true });
     setResult(formatCloneResult(result));
   } catch (error) {
     setResult(error.message || String(error));
@@ -279,7 +281,7 @@ async function handleDeleteSelected() {
       selectedProfileIds: selectedProfiles.map((profile) => profile.id),
     });
 
-    await refreshProfiles({ silent: true });
+    await refreshProfiles({ silent: true, keepBusy: true });
     setResult(formatDeleteResult(result));
   } catch (error) {
     setResult(error.message || String(error));
