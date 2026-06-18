@@ -25,7 +25,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Publish Windows release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run publish:github
+      - name: Build Windows release artifacts
+        run: npm run dist
+
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            release/Chrome-Profile-Cloner-Setup-*.exe
+            release/Chrome-Profile-Cloner-Setup-*.exe.blockmap
+            release/latest.yml
+          fail_on_unmatched_files: true
+          generate_release_notes: true
