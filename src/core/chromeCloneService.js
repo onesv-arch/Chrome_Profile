@@ -74,6 +74,7 @@ async function listChromeProfiles(userDataDir = getDefaultChromeUserDataDir()) {
   const localState = await readJson(localStatePath, {});
   const infoCache = localState.profile?.info_cache ?? {};
   const lastUsed = localState.profile?.last_used ?? null;
+  const activeProfiles = new Set(getActiveChromeProfileIds(localState));
   const runningProfiles = await listRunningChromeProfileProcesses(userDataDir);
   const runningProfileMap = runningProfiles.reduce((map, item) => {
     map.set(item.profileId, (map.get(item.profileId) ?? 0) + 1);
@@ -112,7 +113,7 @@ async function listChromeProfiles(userDataDir = getDefaultChromeUserDataDir()) {
       isEphemeral: Boolean(info.is_ephemeral),
       lastUsed: directory === lastUsed,
       runtime: {
-        isOpen: runningProfileMap.has(directory),
+        isOpen: activeProfiles.has(directory) || runningProfileMap.has(directory),
         processCount: runningProfileMap.get(directory) ?? 0,
       },
       stats: {
@@ -156,8 +157,14 @@ async function openChromeProfile({
     throw new Error(`Profile folder not found: ${profileId}`);
   }
 
-  const runningProfiles = await listRunningChromeProfileProcesses(userDataDir);
-  if (runningProfiles.some((item) => item.profileId === profileId)) {
+  const [localState, runningProfiles] = await Promise.all([
+    readJson(path.join(userDataDir, 'Local State'), {}),
+    listRunningChromeProfileProcesses(userDataDir),
+  ]);
+  if (
+    getActiveChromeProfileIds(localState).includes(profileId) ||
+    runningProfiles.some((item) => item.profileId === profileId)
+  ) {
     return {
       ok: true,
       alreadyOpen: true,
@@ -197,10 +204,19 @@ async function closeChromeProfile({
     throw new Error('Profile id is required.');
   }
 
-  const runningProfiles = await listRunningChromeProfileProcesses(userDataDir);
+  const [localState, runningProfiles] = await Promise.all([
+    readJson(path.join(userDataDir, 'Local State'), {}),
+    listRunningChromeProfileProcesses(userDataDir),
+  ]);
   const matching = runningProfiles.filter((item) => item.profileId === profileId);
 
   if (matching.length === 0) {
+    if (getActiveChromeProfileIds(localState).includes(profileId)) {
+      throw new Error(
+        'Chrome opened this profile inside a shared browser process, so the app cannot close only that profile automatically. Close that Chrome window manually.',
+      );
+    }
+
     return {
       ok: true,
       alreadyClosed: true,
@@ -773,6 +789,13 @@ function parseCsvProcessName(line) {
   return match?.[1] ?? '';
 }
 
+function getActiveChromeProfileIds(localState) {
+  const activeProfiles = localState?.profile?.last_active_profiles;
+  return Array.isArray(activeProfiles)
+    ? activeProfiles.filter((value) => typeof value === 'string' && value.trim())
+    : [];
+}
+
 function isSubPath(parentPath, childPath) {
   const relative = path.relative(parentPath, childPath);
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
@@ -832,6 +855,7 @@ module.exports = {
   listRunningChromeProfileProcesses,
   collectRunningSelectedProfileIds,
   findRunningSelectedProfiles,
+  getActiveChromeProfileIds,
   isSubPath,
   extractChromeFlagValue,
 };

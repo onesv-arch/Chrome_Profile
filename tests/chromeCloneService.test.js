@@ -12,6 +12,7 @@ const {
   isSubPath,
   deleteChromeProfiles,
   collectRunningSelectedProfileIds,
+  getActiveChromeProfileIds,
   extractChromeFlagValue,
 } = require('../src/core/chromeCloneService');
 
@@ -193,4 +194,14 @@ test('collectRunningSelectedProfileIds returns only selected open profiles once'
   );
 
   assert.deepEqual(result, ['Profile 1']);
+});
+
+test('getActiveChromeProfileIds reads last_active_profiles from Local State', () => {
+  const result = getActiveChromeProfileIds({
+    profile: {
+      last_active_profiles: ['Default', 'Profile 1', '', null],
+    },
+  });
+
+  assert.deepEqual(result, ['Default', 'Profile 1']);
 });
