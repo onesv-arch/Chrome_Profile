@@ -3,6 +3,7 @@ const state = {
   filterText: '',
   busy: false,
   cloneInProgress: false,
+  refreshingProfiles: false,
   profileActionBusyIds: new Set(),
   updater: {
     configured: false,
@@ -19,6 +20,9 @@ const state = {
     sourceUrl: null,
   },
 };
+
+let activeProfileRefresh = null;
+let queuedProfileRefresh = false;
 
 const appStatus = document.getElementById('appStatus');
 const updateStatusPill = document.getElementById('updateStatusPill');
@@ -68,6 +72,7 @@ async function init() {
 
   window.chromeCloner.onBusyState((payload) => {
     state.cloneInProgress = Boolean(payload.cloneInProgress);
+    renderAppStatus();
     renderProfiles();
     renderUpdater();
   });
@@ -76,33 +81,54 @@ async function init() {
 }
 
 async function refreshProfiles(options = {}) {
-  if (!options.keepBusy) {
-    setBusy(true);
+  if (activeProfileRefresh) {
+    if (options.queueIfBusy) {
+      queuedProfileRefresh = true;
+    }
+    return activeProfileRefresh;
   }
+
+  state.refreshingProfiles = true;
+  syncControls();
   if (!options.silent) {
     setResult('Loading profiles...');
   }
 
-  try {
-    const result = await window.chromeCloner.listProfiles(userDataDirInput.value.trim());
-    state.profiles = result.profiles.map((profile) => ({
-      ...profile,
-      selected: state.profiles.find((item) => item.id === profile.id)?.selected ?? false,
-    }));
-    renderProfiles();
+  activeProfileRefresh = (async () => {
+    try {
+      const result = await window.chromeCloner.listProfiles(userDataDirInput.value.trim());
+      const selectedProfileIds = new Set(
+        state.profiles
+          .filter((profile) => profile.selected)
+          .map((profile) => profile.id),
+      );
 
-    if (!options.silent) {
-      setResult(`Loaded ${state.profiles.length} profile(s) from:\n${result.userDataDir}`);
+      state.profiles = result.profiles.map((profile) => ({
+        ...profile,
+        selected: selectedProfileIds.has(profile.id),
+      }));
+      renderProfiles();
+
+      if (!options.silent) {
+        setResult(`Loaded ${state.profiles.length} profile(s) from:\n${result.userDataDir}`);
+      }
+    } catch (error) {
+      state.profiles = [];
+      renderProfiles();
+      setResult(error.message || String(error));
+    } finally {
+      activeProfileRefresh = null;
+      state.refreshingProfiles = false;
+      syncControls();
+
+      if (queuedProfileRefresh) {
+        queuedProfileRefresh = false;
+        void refreshProfiles({ silent: true });
+      }
     }
-  } catch (error) {
-    state.profiles = [];
-    renderProfiles();
-    setResult(error.message || String(error));
-  } finally {
-    if (!options.keepBusy) {
-      setBusy(false);
-    }
-  }
+  })();
+
+  return activeProfileRefresh;
 }
 
 function renderProfiles() {
@@ -113,6 +139,7 @@ function renderProfiles() {
       : 'No Chrome profiles were found in this folder.';
     profileList.innerHTML = `<div class="empty-state">${message}</div>`;
     updateSelectionSummary();
+    syncControls();
     return;
   }
 
@@ -191,6 +218,7 @@ function renderProfiles() {
   });
 
   updateSelectionSummary();
+  syncControls();
 }
 
 function getVisibleProfiles() {
@@ -242,7 +270,7 @@ async function handleClone() {
       includeDevModeExtensions: includeDevModeCheckbox.checked,
     });
 
-    await refreshProfiles({ silent: true, keepBusy: true });
+    await refreshProfiles({ silent: true });
     setResult(formatCloneResult(result));
   } catch (error) {
     setResult(error.message || String(error));
@@ -281,7 +309,7 @@ async function handleDeleteSelected() {
       selectedProfileIds: selectedProfiles.map((profile) => profile.id),
     });
 
-    await refreshProfiles({ silent: true, keepBusy: true });
+    await refreshProfiles({ silent: true });
     setResult(formatDeleteResult(result));
   } catch (error) {
     setResult(error.message || String(error));
@@ -296,6 +324,7 @@ async function handleProfileToggle(profileId) {
     return;
   }
 
+  const wasOpen = Boolean(profile.runtime?.isOpen);
   state.profileActionBusyIds.add(profileId);
   renderProfiles();
 
@@ -305,13 +334,22 @@ async function handleProfileToggle(profileId) {
       profileId,
     };
 
-    const result = profile.runtime?.isOpen
+    const result = wasOpen
       ? await window.chromeCloner.closeProfile(payload)
       : await window.chromeCloner.openProfile(payload);
 
-    await refreshProfiles({ silent: true, keepBusy: true });
+    const currentProfile = state.profiles.find((item) => item.id === profileId);
+    if (currentProfile) {
+      currentProfile.runtime = {
+        ...currentProfile.runtime,
+        isOpen: !wasOpen,
+        processCount: wasOpen ? 0 : Math.max(1, currentProfile.runtime?.processCount ?? 0),
+      };
+    }
+    renderProfiles();
+    void refreshProfiles({ silent: true, queueIfBusy: true });
 
-    if (profile.runtime?.isOpen) {
+    if (wasOpen) {
       setResult(
         result.alreadyClosed
           ? `Profile ${profile.name} was already closed.`
@@ -372,14 +410,7 @@ function formatDeleteResult(result) {
 
 function setBusy(isBusy) {
   state.busy = isBusy;
-  appStatus.textContent = isBusy ? 'Working' : 'Ready';
-  appStatus.classList.toggle('busy', isBusy);
-  startCloneButton.disabled = isBusy;
-  refreshProfilesButton.disabled = isBusy;
-  browseDirButton.disabled = isBusy;
-  selectAllButton.disabled = isBusy;
-  clearSelectionButton.disabled = isBusy;
-  deleteSelectedButton.disabled = isBusy;
+  renderAppStatus();
   renderProfiles();
   renderUpdater();
 }
@@ -427,6 +458,24 @@ function renderUpdater() {
   downloadUpdateButton.disabled = true;
   installUpdateButton.disabled = true;
   openFeedButton.disabled = !updater.sourceUrl;
+}
+
+function renderAppStatus() {
+  const isWorking = state.busy || state.cloneInProgress;
+  appStatus.textContent = isWorking ? 'Working' : 'Ready';
+  appStatus.classList.toggle('busy', isWorking);
+}
+
+function syncControls() {
+  const hasProfileActionInFlight = state.profileActionBusyIds.size > 0;
+  const selectionLocked = state.busy || state.cloneInProgress || state.refreshingProfiles;
+
+  startCloneButton.disabled = selectionLocked || hasProfileActionInFlight;
+  refreshProfilesButton.disabled = selectionLocked;
+  browseDirButton.disabled = selectionLocked;
+  selectAllButton.disabled = selectionLocked;
+  clearSelectionButton.disabled = selectionLocked;
+  deleteSelectedButton.disabled = selectionLocked || hasProfileActionInFlight;
 }
 
 function sumBy(items, getValue) {
