@@ -11,6 +11,7 @@ const {
   countBookmarks,
   isSubPath,
   deleteChromeProfiles,
+  collectRunningSelectedProfileIds,
   extractChromeFlagValue,
 } = require('../src/core/chromeCloneService');
 
@@ -179,4 +180,17 @@ test('extractChromeFlagValue reads quoted and unquoted Chrome flags', () => {
     'C:\\Users\\Admin\\AppData\\Local\\Google\\Chrome\\User Data',
   );
   assert.equal(extractChromeFlagValue(commandLine, 'missing-flag'), null);
+});
+
+test('collectRunningSelectedProfileIds returns only selected open profiles once', () => {
+  const result = collectRunningSelectedProfileIds(
+    [
+      { pid: 100, profileId: 'Profile 1' },
+      { pid: 101, profileId: 'Profile 1' },
+      { pid: 102, profileId: 'Profile 7' },
+    ],
+    ['Default', 'Profile 1', 'Profile 5'],
+  );
+
+  assert.deepEqual(result, ['Profile 1']);
 });

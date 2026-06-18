@@ -1,6 +1,6 @@
 {
   "name": "chrome-profile-cloner",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "productName": "Chrome Profile Cloner",
   "description": "Desktop tool to clone Chrome profiles with bookmarks and extensions.",
   "author": "Admin",

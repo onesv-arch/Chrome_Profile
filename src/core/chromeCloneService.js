@@ -325,9 +325,15 @@ async function cloneChromeProfiles({
   }
 
   if (!skipProcessCheck) {
-    const runningChrome = await detectRunningChrome();
-    if (runningChrome.length > 0) {
-      throw new Error('Chrome is still running. Close every Chrome window before cloning.');
+    const runningSelectedProfiles = await findRunningSelectedProfiles({
+      userDataDir,
+      selectedProfileIds,
+    });
+    if (runningSelectedProfiles.length > 0) {
+      const profileLabel = runningSelectedProfiles.length > 1 ? 'profiles are' : 'profile is';
+      throw new Error(
+        `Selected Chrome ${profileLabel} still open: ${runningSelectedProfiles.join(', ')}. Close those source profiles before cloning.`,
+      );
     }
   }
 
@@ -335,6 +341,7 @@ async function cloneChromeProfiles({
   const existingDirectories = await discoverProfileDirectories(userDataDir);
   const createdArtifacts = [];
   const results = [];
+  const createdProfileInfoEntries = {};
 
   try {
     for (const sourceId of selectedProfileIds) {
@@ -369,9 +376,7 @@ async function cloneChromeProfiles({
         createdArtifacts.push({ kind: 'managed-extensions', targetPath: managedTargetDir });
       }
 
-      localState.profile = localState.profile || {};
-      localState.profile.info_cache = localState.profile.info_cache || {};
-      localState.profile.info_cache[target.directory] = {
+      createdProfileInfoEntries[target.directory] = {
         ...sourceInfo,
         name: target.name,
         shortcut_name: target.name,
@@ -389,7 +394,11 @@ async function cloneChromeProfiles({
       });
     }
 
-    await writeJson(localStatePath, localState);
+    const latestLocalState = await readJson(localStatePath, {});
+    latestLocalState.profile = latestLocalState.profile || {};
+    latestLocalState.profile.info_cache = latestLocalState.profile.info_cache || {};
+    Object.assign(latestLocalState.profile.info_cache, createdProfileInfoEntries);
+    await writeJson(localStatePath, latestLocalState);
 
     return {
       ok: true,
@@ -687,6 +696,31 @@ async function detectRunningChrome() {
   }
 }
 
+async function findRunningSelectedProfiles({
+  userDataDir = getDefaultChromeUserDataDir(),
+  selectedProfileIds = [],
+}) {
+  if (!Array.isArray(selectedProfileIds) || selectedProfileIds.length === 0) {
+    return [];
+  }
+
+  const runningProfiles = await listRunningChromeProfileProcesses(userDataDir);
+  return collectRunningSelectedProfileIds(runningProfiles, selectedProfileIds);
+}
+
+function collectRunningSelectedProfileIds(runningProfiles = [], selectedProfileIds = []) {
+  if (!Array.isArray(selectedProfileIds) || selectedProfileIds.length === 0) {
+    return [];
+  }
+
+  const selectedProfileSet = new Set(selectedProfileIds);
+  return [...new Set(
+    runningProfiles
+      .map((entry) => entry.profileId)
+      .filter((profileId) => selectedProfileSet.has(profileId)),
+  )];
+}
+
 async function listRunningChromeProfileProcesses(userDataDir = getDefaultChromeUserDataDir()) {
   if (process.platform !== 'win32') {
     return [];
@@ -796,6 +830,8 @@ module.exports = {
   exists,
   detectRunningChrome,
   listRunningChromeProfileProcesses,
+  collectRunningSelectedProfileIds,
+  findRunningSelectedProfiles,
   isSubPath,
   extractChromeFlagValue,
 };
